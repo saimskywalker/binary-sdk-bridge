@@ -5,6 +5,15 @@ description: >-
   kept out of version control and optional at build time.
 version: 0.1.0
 repository: https://github.com/saimskywalker/binary-sdk-bridge
+issue_tracker: https://github.com/saimskywalker/binary-sdk-bridge/issues
+
+topics:
+  - swift-package-manager
+  - xcframework
+  - gradle
+  - code-generation
+  - flutter-plugin
+
 
 environment:
   sdk: ^3.5.0
@@ -14,7 +23,7 @@ dependencies:
   path: ^1.9.0
 
 dev_dependencies:
-  lints: ^5.0.0
+  lints: ^6.1.0
   test: ^1.25.0
 
 executables:
