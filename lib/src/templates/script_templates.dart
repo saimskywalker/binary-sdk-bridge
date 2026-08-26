@@ -36,23 +36,11 @@ install_from_dir() {
 # SPM caches manifest evaluation by CONTENT, so a freshly-arrived binary is
 # invisible to the Package.swift probe until the cache is dropped.
 clear_spm_cache() {
-  # THREE caches, and missing any one of them makes this script look like it
-  # worked while the build silently ignores the binary. Learned the hard way:
-  # clearing only the first left the Package.swift probe reading false, so the
-  # app built green with no SDK linked, no warning anywhere, three times.
-  #
-  #   1. Flutter's generated package graph
-  #   2. Xcode's cloned SourcePackages (xcodebuild is invoked with
-  #      -clonedSourcePackagesDirPath pointing here)
-  #   3. SwiftPM's GLOBAL manifest cache -- the decisive one, since it is keyed
-  #      on manifest CONTENT and the manifest text does not change when the
-  #      binary appears
+CACHE_COMMENT
   local mobile_dir="$PKG_DIR/../.."
   local cache
   for cache in \
-    "$mobile_dir/ios/Flutter/ephemeral" \
-    "$mobile_dir/build/ios/SourcePackages/manifests" \
-    "$HOME/Library/Caches/org.swift.swiftpm/manifests"
+CACHE_PATHS
   do
     if [[ -e "$cache" ]]; then
       rm -rf "$cache"
@@ -63,10 +51,9 @@ clear_spm_cache() {
   echo "In Xcode, also run File > Packages > Reset Package Caches if it is open."
   echo
   echo "VERIFY the binary actually linked -- a green build is NOT evidence."
-  echo "\`flutter build\` passes -quiet to xcodebuild, which suppresses the"
-  echo "#warning the bridge emits. Check one of these instead:"
+VERIFY_NOTE
   echo
-  echo "  swift package --package-path ios/Flutter/ephemeral/Packages/.packages/PLUGIN \\"
+  echo "  swift package --package-path PKG_PATH \\\\"
   echo "    describe --type json | grep '\"type\" : \"binary\"'"
   echo
   echo "  ls build/ios/iphonesimulator/Runner.app/Frameworks/"
@@ -137,8 +124,38 @@ fi
 install_from_dir "$XCFRAMEWORK"
 clear_spm_cache
 '''
+    .replaceAll(
+        'CACHE_COMMENT', spec.isFlutter ? _flutterComment : _nativeComment)
+    .replaceAll(
+      'PKG_PATH',
+      spec.isFlutter
+          ? 'ios/Flutter/ephemeral/Packages/.packages/${spec.pluginName}'
+          : 'ios/${spec.pluginName}',
+    )
+    .replaceAll('CACHE_PATHS', spec.isFlutter ? _flutterCaches : _nativeCaches)
+    .replaceAll('VERIFY_NOTE', spec.isFlutter ? _flutterVerify : _nativeVerify)
     .replaceAll('PLUGIN', spec.pluginName)
     .replaceAll('FRAMEWORK', spec.iosFrameworkName ?? 'Vendor');
+
+/// Flutter resolves through its own ephemeral graph AND Xcode's cloned
+/// SourcePackages, on top of SwiftPM's global manifest cache.
+const _flutterCaches = r'''    "$mobile_dir/ios/Flutter/ephemeral" \
+    "$mobile_dir/build/ios/SourcePackages/manifests" \
+    "$HOME/Library/Caches/org.swift.swiftpm/manifests"''';
+
+/// A plain SwiftPM consumer has no Flutter graph, but the GLOBAL manifest
+/// cache hides a freshly-arrived binary in exactly the same way.
+const _nativeCaches =
+    r'''    "$HOME/Library/Caches/org.swift.swiftpm/manifests" \
+    "$PKG_DIR/.build"''';
+
+const _flutterVerify =
+    r'''  echo "`flutter build` passes -quiet to xcodebuild, which suppresses the"
+  echo "#warning the bridge emits. Check one of these instead:"''';
+
+const _nativeVerify =
+    r'''  echo "A build that succeeds without the binary looks identical to one"
+  echo "that linked it. Check one of these instead:"''';
 
 String fetchAndroidSh(BridgeSpec spec) => r'''
 #!/usr/bin/env bash
@@ -236,3 +253,20 @@ String gitignore(BridgeSpec spec) {
   ];
   return '${lines.join('\n')}\n';
 }
+
+const _flutterComment =
+    '''  # THREE caches, and missing any one makes this script look like it worked
+  # while the build silently ignores the binary. Clearing only the first
+  # leaves the Package.swift probe reading false, so the app builds green
+  # with no SDK linked and nothing in any log.
+  #
+  #   1. Flutter's generated package graph
+  #   2. Xcode's cloned SourcePackages (xcodebuild is invoked with
+  #      -clonedSourcePackagesDirPath pointing here)
+  #   3. SwiftPM's GLOBAL manifest cache -- the decisive one, since it is keyed
+  #      on manifest CONTENT, which does not change when the binary appears''';
+
+const _nativeComment =
+    '''  # SwiftPM keys manifest evaluation on manifest CONTENT, and the manifest
+  # text does not change when the binary appears -- so a stale cache keeps the
+  # probe reading false and the package builds green with no binary linked.''';

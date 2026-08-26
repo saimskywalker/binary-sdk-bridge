@@ -1,15 +1,28 @@
 # binary-sdk-bridge
 
-Generate a Flutter plugin that wraps a **closed-source binary SDK** — Swift
-Package Manager on iOS, a Gradle module on Android — with the vendor binary
-kept out of version control and *optional at build time*.
+Wrap a **closed-source binary SDK** — Swift Package Manager on iOS, a Gradle
+module on Android — with the vendor binary kept out of version control and
+*optional at build time*.
+
+Two flavours, same core:
 
 ```bash
+# Flutter plugin: native wrappers + Dart API + plugin classes
 dart run binary_sdk_bridge \
   --name acme_ads --org com.example \
   --ios-framework AcmeSDK --android-aar AcmeSDK \
   --out packages
+
+# Native only: an SPM package and a Gradle module, no Flutter anywhere
+dart run binary_sdk_bridge --flavor native \
+  --name acme_sdk --org com.example \
+  --ios-framework AcmeSDK --android-aar AcmeSDK \
+  --out vendor
 ```
+
+The native flavour is for a plain iOS or Android app — or any runtime that can
+consume a Swift package and a Gradle module. It emits no pubspec, no Dart, and
+no Flutter dependency at all.
 
 ## The problem
 
@@ -155,7 +168,8 @@ right.
 
 | Flag | Default | |
 |---|---|---|
-| `--name`, `-n` | *required* | plugin package name, `lower_snake_case` |
+| `--name`, `-n` | *required* | package/module name, `lower_snake_case` |
+| `--flavor` | `flutter` | `flutter` (full plugin) or `native` (SPM + Gradle only) |
 | `--org`, `-o` | *required* | reverse-DNS prefix, e.g. `com.example` |
 | `--ios-framework` | — | `.xcframework` base name; omit to skip iOS |
 | `--android-aar` | — | `.aar` base name; omit to skip Android |
@@ -184,6 +198,24 @@ no initialisation surface whatsoever, its adapters being instantiated by the
 host SDK from a server response. The generated bridge starts as a runtime
 presence check for exactly that reason: it is the one question worth answering
 even when there is nothing to call.
+
+## Contributing
+
+Pull requests are welcome, including from forks — that is the normal path, and
+nothing merges without a maintainer review. See
+[CONTRIBUTING.md](CONTRIBUTING.md); the short version is that the **generated
+output is the product**, so a template change should come with the output it
+produces.
+
+## Safety notes
+
+Binary names are interpolated into generated shell scripts, so they are
+validated against a strict character set — a name carrying a quote or a command
+substitution is refused rather than written to disk. There are tests with real
+injection payloads.
+
+Nothing here downloads anything without a pinned SHA-256; the fetch scripts
+refuse an unpinned URL rather than trusting it on first use.
 
 ## License
 

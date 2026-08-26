@@ -8,7 +8,25 @@ import '../spec.dart';
 /// vendor binary cannot build at all, and CI never can. Probing the filesystem
 /// from the manifest and declaring the target conditionally is what keeps the
 /// binary genuinely optional.
-String packageSwift(BridgeSpec spec) => '''
+String packageSwift(BridgeSpec spec) => _packageSwift(spec)
+    .replaceAll('PRODUCTS_BLOCK',
+        spec.isFlutter ? _flutterProducts(spec) : _nativeProducts(spec))
+    .replaceAll('DEPS_BLOCK', spec.isFlutter ? _flutterDeps : '');
+
+/// Flutter needs the dashed product name its SPM integration looks for —
+/// renaming it breaks plugin discovery silently — plus the kit for anyone
+/// depending on the package directly.
+String _flutterProducts(BridgeSpec spec) =>
+    '        .library(name: "${spec.iosProductName}", targets: ["${spec.pluginName}"]),\n'
+    '        .library(name: "${spec.kitName}", targets: ["${spec.kitName}"]),';
+
+String _nativeProducts(BridgeSpec spec) =>
+    '        .library(name: "${spec.kitName}", targets: ["${spec.kitName}"]),';
+
+const _flutterDeps =
+    '\n        .package(name: "FlutterFramework", path: "../FlutterFramework")\n    ';
+
+String _packageSwift(BridgeSpec spec) => '''
 // swift-tools-version: 5.9
 import Foundation
 import PackageDescription
@@ -28,7 +46,7 @@ import PackageDescription
 //
 // ⚠️ SPM caches manifest evaluation by manifest CONTENT, not by filesystem
 // state. Dropping the binary in afterwards does not by itself flip this
-// branch — the fetch script clears the Flutter SPM cache for that reason. In
+// branch — the fetch script clears the SPM caches for that reason. In
 // Xcode: File ▸ Packages ▸ Reset Package Caches.
 let sdkPath = Context.packageDirectory
     + "/Frameworks/${spec.iosFrameworkName}.xcframework"
@@ -49,9 +67,8 @@ if sdkPresent {
     kitSwiftSettings.append(.define("${spec.sdkDefine}"))
 }
 
-// No Flutter import in this target, so a plain iOS app can depend on the
-// package directly — and the vendor integration stays unit-testable without
-// an engine.
+// No app-framework import in this target, so any iOS consumer can depend on
+// the package directly — and the vendor integration stays unit-testable.
 targets.append(
     .target(
         name: "${spec.kitName}",
@@ -60,7 +77,7 @@ targets.append(
     )
 )
 
-targets.append(
+${spec.isFlutter ? '''targets.append(
     .target(
         name: "${spec.pluginName}",
         dependencies: [
@@ -68,7 +85,7 @@ targets.append(
             .product(name: "FlutterFramework", package: "FlutterFramework"),
         ]
     )
-)
+)''' : '// Native flavour: no Flutter plugin target, so no Flutter dependency.'}
 
 let package = Package(
     name: "${spec.pluginName}",
@@ -79,15 +96,9 @@ let package = Package(
         .iOS("${spec.iosDeploymentTarget}")
     ],
     products: [
-        // The dashed spelling is the convention Flutter's SPM integration
-        // looks for — renaming it breaks plugin discovery silently.
-        .library(name: "${spec.iosProductName}", targets: ["${spec.pluginName}"]),
-        // For a non-Flutter iOS consumer.
-        .library(name: "${spec.kitName}", targets: ["${spec.kitName}"]),
+PRODUCTS_BLOCK
     ],
-    dependencies: [
-        .package(name: "FlutterFramework", path: "../FlutterFramework")
-    ],
+    dependencies: [DEPS_BLOCK],
     targets: targets
 )
 ''';
@@ -107,7 +118,7 @@ public enum ${spec.kitName}State: Equatable {
     case ready(version: String)
     case unavailable(reason: String)
 
-    /// Wire form for the Flutter method channel. Defined here rather than in
+    /// Wire form for the transport that carries this to your app. Defined in
     /// the plugin so the Android side can mirror the same two keys — Dart then
     /// parses one shape for both platforms.
     public var asDictionary: [String: Any] {

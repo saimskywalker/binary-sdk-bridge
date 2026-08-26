@@ -5,7 +5,8 @@ import 'package:binary_sdk_bridge/binary_sdk_bridge.dart';
 
 void main(List<String> arguments) {
   final parser = ArgParser()
-    ..addOption('name', abbr: 'n', help: 'Plugin package name (lower_snake_case).')
+    ..addOption('name',
+        abbr: 'n', help: 'Plugin package name (lower_snake_case).')
     ..addOption('org', abbr: 'o', help: 'Reverse-DNS prefix, e.g. com.example.')
     ..addOption(
       'ios-framework',
@@ -14,16 +15,28 @@ void main(List<String> arguments) {
     )
     ..addOption(
       'android-aar',
-      help: 'Base name of the .aar, without the extension. Omit to skip Android.',
+      help:
+          'Base name of the .aar, without the extension. Omit to skip Android.',
     )
-    ..addOption('out', defaultsTo: '.', help: 'Directory to create the package in.')
+    ..addOption(
+      'flavor',
+      defaultsTo: 'flutter',
+      allowed: ['flutter', 'native'],
+      help: 'flutter = full plugin (Dart API + plugin classes).\n'
+          'native  = SPM package + Gradle module only, no Flutter.',
+    )
+    ..addOption('out',
+        defaultsTo: '.', help: 'Directory to create the package in.')
     ..addOption('description', help: 'Package description.')
-    ..addOption('ios-target', defaultsTo: '15.0', help: 'iOS deployment target.')
+    ..addOption('ios-target',
+        defaultsTo: '15.0', help: 'iOS deployment target.')
     ..addOption('min-sdk', defaultsTo: '24', help: 'Android minSdk.')
     ..addOption('compile-sdk', defaultsTo: '36', help: 'Android compileSdk.')
     ..addOption('java', defaultsTo: '17', help: 'Java/jvmTarget version.')
-    ..addFlag('force', help: 'Overwrite an existing package directory.', negatable: false)
-    ..addFlag('dry-run', help: 'List the files that would be written.', negatable: false)
+    ..addFlag('force',
+        help: 'Overwrite an existing package directory.', negatable: false)
+    ..addFlag('dry-run',
+        help: 'List the files that would be written.', negatable: false)
     ..addFlag('help', abbr: 'h', help: 'Show this usage.', negatable: false);
 
   final ArgResults args;
@@ -46,15 +59,39 @@ void main(List<String> arguments) {
     return;
   }
 
+  // Parsed defensively: `int.parse` on a bad flag threw an unhandled
+  // FormatException and dumped a Dart stack trace at the user, which reads as
+  // a crash rather than as "you typed that wrong".
+  final int? minSdk = int.tryParse(args.option('min-sdk')!);
+  final int? compileSdk = int.tryParse(args.option('compile-sdk')!);
+  final int? java = int.tryParse(args.option('java')!);
+  for (final (flag, value) in [
+    ('--min-sdk', minSdk),
+    ('--compile-sdk', compileSdk),
+    ('--java', java),
+  ]) {
+    if (value == null) {
+      _fail('$flag must be a whole number.', parser);
+      return;
+    }
+  }
+
+  final flavor = BridgeFlavor.parse(args.option('flavor')!);
+  if (flavor == null) {
+    _fail('--flavor must be "flutter" or "native".', parser);
+    return;
+  }
+
   final spec = BridgeSpec(
     pluginName: name,
     organization: org,
+    flavor: flavor,
     iosFrameworkName: args.option('ios-framework'),
     androidAarName: args.option('android-aar'),
     iosDeploymentTarget: args.option('ios-target')!,
-    androidMinSdk: int.parse(args.option('min-sdk')!),
-    androidCompileSdk: int.parse(args.option('compile-sdk')!),
-    javaVersion: int.parse(args.option('java')!),
+    androidMinSdk: minSdk!,
+    androidCompileSdk: compileSdk!,
+    javaVersion: java!,
     description: args.option('description'),
   );
 
@@ -69,7 +106,8 @@ void main(List<String> arguments) {
   if (args.flag('dry-run')) {
     stdout.writeln('Would create ${spec.pluginName}/ with:');
     for (final file in generator.plan()) {
-      stdout.writeln('  ${file.relativePath}${file.executable ? '  (executable)' : ''}');
+      stdout.writeln(
+          '  ${file.relativePath}${file.executable ? '  (executable)' : ''}');
     }
     return;
   }

@@ -33,11 +33,16 @@ class BridgeGenerator {
 
   List<GeneratedFile> plan() {
     final files = <GeneratedFile>[
-      GeneratedFile('pubspec.yaml', dart.pubspecYaml(spec)),
       GeneratedFile('.gitignore', scripts.gitignore(spec)),
-      GeneratedFile('lib/${spec.pluginName}.dart', dart.apiDart(spec)),
-      GeneratedFile('lib/src/vendor_state.dart', dart.stateDart(spec)),
-      GeneratedFile('test/${spec.pluginName}_test.dart', dart.testDart(spec)),
+      // The Dart layer exists only for the Flutter flavour. A native consumer
+      // gets the SPM package and the Gradle module and nothing else — no
+      // pubspec, no plugin class, nothing that drags Flutter in.
+      if (spec.isFlutter) ...[
+        GeneratedFile('pubspec.yaml', dart.pubspecYaml(spec)),
+        GeneratedFile('lib/${spec.pluginName}.dart', dart.apiDart(spec)),
+        GeneratedFile('lib/src/vendor_state.dart', dart.stateDart(spec)),
+        GeneratedFile('test/${spec.pluginName}_test.dart', dart.testDart(spec)),
+      ],
     ];
 
     if (spec.hasIos) {
@@ -48,10 +53,11 @@ class BridgeGenerator {
           '$root/Sources/${spec.kitName}/${spec.kitName}.swift',
           ios.bridgeSwift(spec),
         ),
-        GeneratedFile(
-          '$root/Sources/${spec.pluginName}/${spec.pluginClassName}Plugin.swift',
-          ios.pluginSwift(spec),
-        ),
+        if (spec.isFlutter)
+          GeneratedFile(
+            '$root/Sources/${spec.pluginName}/${spec.pluginClassName}Plugin.swift',
+            ios.pluginSwift(spec),
+          ),
         // Keeps the directory in git while its contents are ignored, so
         // the Package.swift probe always has a stable path to look at.
         GeneratedFile('$root/Frameworks/.gitkeep', ''),
@@ -74,10 +80,11 @@ class BridgeGenerator {
           '$src/main/kotlin/$pkgPath/VendorState.kt',
           android.stateKotlin(spec),
         ),
-        GeneratedFile(
-          '$src/main/kotlin/$pkgPath/${spec.pluginClassName}Plugin.kt',
-          android.pluginKotlin(spec),
-        ),
+        if (spec.isFlutter)
+          GeneratedFile(
+            '$src/main/kotlin/$pkgPath/${spec.pluginClassName}Plugin.kt',
+            android.pluginKotlin(spec),
+          ),
         GeneratedFile(
           '$src/noSdk/kotlin/$pkgPath/sdk/VendorBridge.kt',
           android.bridgeKotlinNoSdk(spec),

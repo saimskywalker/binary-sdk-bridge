@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart test
+
+      # The generator's real contract is that its OUTPUT works, not that its
+      # own tests pass. Generate both flavours and check the results hold up.
+      - name: Generated output is valid
+        run: |
+          set -euo pipefail
+          dart run bin/binary_sdk_bridge.dart \
+            --name acme_ads --org com.example \
+            --ios-framework AcmeSDK --android-aar AcmeSDK --out /tmp/flutter
+          dart run bin/binary_sdk_bridge.dart \
+            --name acme_sdk --org com.example --flavor native \
+            --ios-framework AcmeSDK --android-aar AcmeSDK --out /tmp/native
+
+          # No template expression may survive into a generated file.
+          if grep -rq '${spec\.' /tmp/flutter /tmp/native; then
+            echo "::error::a template expression leaked into generated output"
+            exit 1
+          fi
+
+          # The generated shell scripts must at least parse.
+          for s in /tmp/flutter/acme_ads/tool/*.sh /tmp/native/acme_sdk/tool/*.sh; do
+            bash -n "$s"
+          done
+
+          # The native flavour must not drag Dart in.
+          test ! -f /tmp/native/acme_sdk/pubspec.yaml
