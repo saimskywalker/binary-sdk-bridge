@@ -36,13 +36,40 @@ install_from_dir() {
 # SPM caches manifest evaluation by CONTENT, so a freshly-arrived binary is
 # invisible to the Package.swift probe until the cache is dropped.
 clear_spm_cache() {
-  local ephemeral="$PKG_DIR/../../ios/Flutter/ephemeral"
-  if [[ -d "$ephemeral" ]]; then
-    rm -rf "$ephemeral"
-    echo "==> cleared Flutter SPM cache"
-  fi
+  # THREE caches, and missing any one of them makes this script look like it
+  # worked while the build silently ignores the binary. Learned the hard way:
+  # clearing only the first left the Package.swift probe reading false, so the
+  # app built green with no SDK linked, no warning anywhere, three times.
+  #
+  #   1. Flutter's generated package graph
+  #   2. Xcode's cloned SourcePackages (xcodebuild is invoked with
+  #      -clonedSourcePackagesDirPath pointing here)
+  #   3. SwiftPM's GLOBAL manifest cache -- the decisive one, since it is keyed
+  #      on manifest CONTENT and the manifest text does not change when the
+  #      binary appears
+  local mobile_dir="$PKG_DIR/../.."
+  local cache
+  for cache in \
+    "$mobile_dir/ios/Flutter/ephemeral" \
+    "$mobile_dir/build/ios/SourcePackages/manifests" \
+    "$HOME/Library/Caches/org.swift.swiftpm/manifests"
+  do
+    if [[ -e "$cache" ]]; then
+      rm -rf "$cache"
+      echo "==> cleared $cache"
+    fi
+  done
   echo
   echo "In Xcode, also run File > Packages > Reset Package Caches if it is open."
+  echo
+  echo "VERIFY the binary actually linked -- a green build is NOT evidence."
+  echo "\`flutter build\` passes -quiet to xcodebuild, which suppresses the"
+  echo "#warning the bridge emits. Check one of these instead:"
+  echo
+  echo "  swift package --package-path ios/Flutter/ephemeral/Packages/.packages/PLUGIN \\"
+  echo "    describe --type json | grep '\"type\" : \"binary\"'"
+  echo
+  echo "  ls build/ios/iphonesimulator/Runner.app/Frameworks/"
 }
 
 # --- local directory form --------------------------------------------------

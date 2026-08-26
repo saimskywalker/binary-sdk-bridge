@@ -118,6 +118,39 @@ failing the module before a single source file is read:
 The first is the nastier one: it also drags the `android { }` accessor itself
 into deprecation-as-error.
 
+## Four traps this generator already walks around
+
+Every one of these was hit in a production integration first. They are in the
+generated code because finding them a second time is not free.
+
+**A green build is not evidence the binary linked.** `flutter build` passes
+`-quiet` to xcodebuild, which suppresses the `#warning` the bridge emits, so
+its absence proves nothing. The fetch script prints the two checks that do
+work: `swift package describe` reporting a `binary` target, and the framework
+appearing in `Runner.app/Frameworks/`.
+
+**SwiftPM caches manifest evaluation by CONTENT, in three places.** Dropping the
+binary in afterwards does not flip the `Package.swift` probe, because the
+manifest text is unchanged. Clearing only Flutter's ephemeral directory leaves
+Xcode's cloned `SourcePackages` and SwiftPM's *global* manifest cache intact —
+which produced three consecutive green builds with no SDK linked and nothing in
+any log. The generated script clears all three.
+
+**AGP refuses a library module with a direct local `.aar`.** `bundleDebugAar`
+fails with *"Direct local .aar file dependencies are not supported when building
+an AAR"*, because those classes would be dropped from the published artifact.
+The generated module uses `runtimeOnly` and documents that `flutter build aar`
+is unsupported while the binary is in place — the real fix is a Maven
+coordinate from the vendor.
+
+**A slot's hidden and shown states must be the SAME tree shape.** If they are
+not, the moment the SDK reports success the widget's Element is disposed and
+rebuilt, and the fresh `initState` fires a second request for something already
+counted. In an ads context that is a doubled impression on your side of every
+reconciliation. Not generator-enforced — it is a consumer-side pattern — but
+the generated bridge's callback contract is shaped to make it easy to get
+right.
+
 ## Options
 
 | Flag | Default | |
@@ -136,11 +169,21 @@ into deprecation-as-error.
 
 ## Status
 
-Early. The generated package is verified end-to-end — `flutter pub get`,
-`flutter analyze` and `flutter test` all pass on fresh output, and the same
-structure builds on both platforms in a real app. What it does **not** do yet
-is write the vendor calls for you; no generator can, since that API is
-whatever the vendor shipped.
+Early, but no longer theoretical. The structure this generates is running in a
+production Flutter app against a real vendor SDK — the binary links, the
+framework lands in the built `.app` beside a single copy of its shared
+dependency, and the Android module compiles and reaches the app's runtime
+classpath. The four traps above are what that integration cost, paid once.
+
+Fresh output passes `flutter pub get`, `flutter analyze` and `flutter test`.
+
+What it does **not** do is write the vendor calls for you; no generator can,
+since that API is whatever the vendor shipped. Worth knowing that sometimes
+there is no API at all — one SDK this was built against turned out to expose
+no initialisation surface whatsoever, its adapters being instantiated by the
+host SDK from a server response. The generated bridge starts as a runtime
+presence check for exactly that reason: it is the one question worth answering
+even when there is nothing to call.
 
 ## License
 

@@ -83,7 +83,8 @@ class BridgeSpec {
       );
     }
     if (pluginName.endsWith('_')) {
-      throw FormatException('plugin name must not end with "_", got "$pluginName"');
+      throw FormatException(
+          'plugin name must not end with "_", got "$pluginName"');
     }
     if (!_reverseDns.hasMatch(organization)) {
       throw FormatException(

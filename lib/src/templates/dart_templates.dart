@@ -6,7 +6,8 @@ String pubspecYaml(BridgeSpec spec) {
       '      android:\n'
           '        package: ${spec.androidPackage}\n'
           '        pluginClass: ${spec.pluginClassName}Plugin',
-    if (spec.hasIos) '      ios:\n        pluginClass: ${spec.pluginClassName}Plugin',
+    if (spec.hasIos)
+      '      ios:\n        pluginClass: ${spec.pluginClassName}Plugin',
   ].join('\n');
 
   return '''

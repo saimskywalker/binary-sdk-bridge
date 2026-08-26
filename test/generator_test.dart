@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:binary_sdk_bridge/binary_sdk_bridge.dart';
 import 'package:test/test.dart';
 
-BridgeSpec _spec({String? ios = 'AcmeSDK', String? aar = 'AcmeSDK'}) => BridgeSpec(
+BridgeSpec _spec({String? ios = 'AcmeSDK', String? aar = 'AcmeSDK'}) =>
+    BridgeSpec(
       pluginName: 'acme_ads',
       organization: 'com.example',
       iosFrameworkName: ios,
@@ -125,8 +126,10 @@ void main() {
       // Split on the append calls rather than matching exact whitespace, so
       // reformatting the template does not break the assertion.
       final blocks = manifest.split('targets.append(');
-      final kitBlock = blocks.firstWhere((b) => b.contains('name: "AcmeAdsKit"'));
-      final pluginBlock = blocks.firstWhere((b) => b.contains('name: "acme_ads"'));
+      final kitBlock =
+          blocks.firstWhere((b) => b.contains('name: "AcmeAdsKit"'));
+      final pluginBlock =
+          blocks.firstWhere((b) => b.contains('name: "acme_ads"'));
 
       expect(kitBlock, isNot(contains('FlutterFramework')));
       expect(pluginBlock, contains('FlutterFramework'));
@@ -134,6 +137,49 @@ void main() {
 
     test('exposes the dashed product Flutter looks for', () {
       expect(manifest, contains('.library(name: "acme-ads"'));
+    });
+  });
+
+  group('lessons the generated code must not lose', () {
+    String fileNamed(String needle) => BridgeGenerator(_spec())
+        .plan()
+        .firstWhere((f) => f.relativePath.contains(needle))
+        .contents;
+
+    test('the iOS fetch script clears ALL THREE SPM caches', () {
+      // Clearing only Flutter's ephemeral dir leaves SwiftPM's GLOBAL manifest
+      // cache intact, and since that cache is keyed on manifest CONTENT — which
+      // does not change when the binary appears — the probe keeps reading
+      // false. The result is a green build with no SDK linked and no warning
+      // anywhere. Measured in production before this was fixed.
+      final script = fileNamed('fetch_ios_sdk.sh');
+      expect(script, contains('ios/Flutter/ephemeral'));
+      expect(script, contains('build/ios/SourcePackages/manifests'));
+      expect(script, contains('org.swift.swiftpm/manifests'));
+    });
+
+    test('the fetch script warns that a green build is not evidence', () {
+      // `flutter build` passes -quiet to xcodebuild, which suppresses the
+      // #warning the bridge emits, so its absence proves nothing.
+      final script = fileNamed('fetch_ios_sdk.sh');
+      expect(script, contains('-quiet'));
+      expect(script, contains('swift package'));
+    });
+
+    test('the Android module keeps the vendor .aar off the compile classpath',
+        () {
+      // `implementation(files(...))` makes bundleDebugAar fail outright:
+      // "Direct local .aar file dependencies are not supported when building
+      // an AAR". runtimeOnly is both the fix and the honest declaration.
+      final gradle = fileNamed('build.gradle.kts');
+      expect(gradle, contains('runtimeOnly(files(vendorAar))'));
+      expect(
+        gradle,
+        isNot(contains('implementation(files(vendorAar))')),
+        reason: 'implementation() breaks bundleDebugAar',
+      );
+      expect(gradle, contains('bundleDebugAar'),
+          reason: 'the limitation must be documented in the file itself');
     });
   });
 

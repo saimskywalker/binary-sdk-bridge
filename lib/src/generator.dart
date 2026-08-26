@@ -10,7 +10,8 @@ import 'templates/script_templates.dart' as scripts;
 
 /// One file the generator intends to write.
 class GeneratedFile {
-  const GeneratedFile(this.relativePath, this.contents, {this.executable = false});
+  const GeneratedFile(this.relativePath, this.contents,
+      {this.executable = false});
 
   /// Path relative to the package root, always with `/` separators.
   final String relativePath;
@@ -67,7 +68,8 @@ class BridgeGenerator {
       final pkgPath = spec.androidPackagePath;
       files.addAll([
         GeneratedFile('android/build.gradle.kts', android.buildGradleKts(spec)),
-        GeneratedFile('$src/main/AndroidManifest.xml', android.androidManifest(spec)),
+        GeneratedFile(
+            '$src/main/AndroidManifest.xml', android.androidManifest(spec)),
         GeneratedFile(
           '$src/main/kotlin/$pkgPath/VendorState.kt',
           android.stateKotlin(spec),
@@ -110,7 +112,8 @@ class BridgeGenerator {
     }
 
     for (final file in plan()) {
-      final target = File(p.join(packageRoot.path, p.joinAll(file.relativePath.split('/'))));
+      final target = File(
+          p.join(packageRoot.path, p.joinAll(file.relativePath.split('/'))));
       target.parent.createSync(recursive: true);
       target.writeAsStringSync(file.contents);
       if (file.executable) {

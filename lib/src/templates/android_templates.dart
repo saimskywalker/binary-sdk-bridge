@@ -65,9 +65,23 @@ kotlin {
     }
 }
 
+// ⚠️ This module cannot be published as a standalone AAR while the vendor
+// binary is present. `bundleDebugAar` fails with "Direct local .aar file
+// dependencies are not supported when building an AAR" -- AGP refuses because
+// those classes would be silently dropped from the published artifact.
+//
+// That is fine for how Flutter consumes it: plugin modules are included as
+// Gradle SUBPROJECTS and the app depends on `project(":...")`, a path that
+// never runs `bundleDebugAar`. It does mean `flutter build aar` (add-to-app)
+// is unsupported for the host app while the .aar is in place. The real fix is
+// a Maven coordinate from the vendor.
 dependencies {
     if (sdkPresent) {
-        implementation(files(vendorAar))
+        // `runtimeOnly`, not `implementation`: nothing here needs the vendor
+        // classes at COMPILE time when the bridge is a runtime class lookup,
+        // and keeping the .aar off the compile classpath is the honest
+        // declaration of what is actually required.
+        runtimeOnly(files(vendorAar))
         // A bare .aar carries NO transitive dependency metadata. Every SDK the
         // vendor binary expects at runtime has to be declared HERE by hand,
         // and a missing one is a ClassNotFoundException at call time, not a
