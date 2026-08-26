@@ -183,6 +183,13 @@ reconciliation. Not generator-enforced — it is a consumer-side pattern — but
 the generated bridge's callback contract is shaped to make it easy to get
 right.
 
+## Host platforms
+
+Generation works on macOS, Linux, and Windows. The generated `tool/fetch_*.sh`
+scripts are bash (`#!/usr/bin/env bash`, `curl`, `shasum`, `unzip`) — on
+Windows run them from WSL or Git Bash. Building the iOS `.xcframework` half
+still needs macOS; Android generation and Gradle builds are fine on Windows.
+
 ## Options
 
 | Flag | Default | |

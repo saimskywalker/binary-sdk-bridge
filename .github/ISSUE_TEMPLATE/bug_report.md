@@ -20,5 +20,5 @@ dart run bin/binary_sdk_bridge.dart --name ... --org ...
 **Environment**
 
 - Dart version:
-- Host platform (macOS / Linux):
+- Host platform (macOS / Linux / Windows):
 - Consumer (Flutter version, or plain Xcode/Gradle):

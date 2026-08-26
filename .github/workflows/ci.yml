@@ -9,6 +9,11 @@ permissions:
   contents: read
 
 jobs:
+  # Deliberately NOT a matrix. A matrixed job reports its checks as
+  # `test (ubuntu-latest)` etc., never `test` — and `test` is the check name
+  # branch protection on main requires, so matrixing this job would leave every
+  # future PR waiting forever on a check that is no longer reported. Windows
+  # lives in its own job below instead.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +29,7 @@ jobs:
 
       # The generator's real contract is that its OUTPUT works, not that its
       # own tests pass. Generate both flavours and check the results hold up.
+      # Bash-only, hence Linux-only — this is why it stays in this job.
       - name: Generated output is valid
         run: |
           set -euo pipefail
@@ -40,6 +46,13 @@ jobs:
             exit 1
           fi
 
+          # Nor an unrendered @...@ script placeholder.
+          if grep -rqE '@[A-Z][A-Z_]*@' /tmp/flutter /tmp/native; then
+            echo "::error::an unrendered @...@ placeholder reached generated output"
+            grep -rnE '@[A-Z][A-Z_]*@' /tmp/flutter /tmp/native
+            exit 1
+          fi
+
           # The generated shell scripts must at least parse.
           for s in /tmp/flutter/acme_ads/tool/*.sh /tmp/native/acme_sdk/tool/*.sh; do
             bash -n "$s"
@@ -47,3 +60,21 @@ jobs:
 
           # The native flavour must not drag Dart in.
           test ! -f /tmp/native/acme_sdk/pubspec.yaml
+
+  # Windows coverage for the generator itself (#3: chmod, path separators).
+  # Separate job, separate check name, so the required `test` check above keeps
+  # being reported. Not required to merge — a failure here is visible on the PR
+  # without blocking, which is the trade for not touching branch protection.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      # No `dart format --set-exit-if-changed` here: it is host-independent and
+      # already gated above, and the Windows runner checks out CRLF.
+      - run: dart test
