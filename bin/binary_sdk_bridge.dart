@@ -126,6 +126,12 @@ void main(List<String> arguments) {
     ..writeln()
     ..writeln('Next:');
   generator.nextSteps(root.path).forEach(stdout.writeln);
+  if (Platform.isWindows) {
+    stdout
+      ..writeln()
+      ..writeln('Note: tool/fetch_*.sh are bash scripts (curl, shasum, unzip). '
+          'Run them from WSL or Git Bash — not from cmd.exe or PowerShell.');
+  }
 }
 
 String _usage(ArgParser parser) => '''

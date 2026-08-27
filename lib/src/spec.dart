@@ -78,7 +78,9 @@ class BridgeSpec {
 
   String get androidPackage => '$organization.$pluginName';
 
-  String get androidPackagePath => p.joinAll(androidPackage.split('.'));
+  // Always `/` — [GeneratedFile.relativePath] is platform-independent, and
+  // `path.joinAll` would inject `\` on Windows (#3 / Windows generation).
+  String get androidPackagePath => p.posix.joinAll(androidPackage.split('.'));
 
   /// Method-channel name. The `_method` suffix is deliberate: Flutter's binary
   /// messenger keys handlers by name alone, so an EventChannel added later

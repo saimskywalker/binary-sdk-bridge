@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-Fixes found by running the README end to end as a new user would.
+Fixes found by running the README end to end as a new user would, plus
+Windows support for the generator itself.
 
 - The generated `tool/fetch_ios_sdk.sh` ran `flutter build` while trying to
   explain it: the backticks in the advice line were command substitution
@@ -20,6 +21,12 @@ Fixes found by running the README end to end as a new user would.
   Flutter's `Runner.app`.
 - The README's install step was missing entirely, and its example commands
   (`dart run binary_sdk_bridge`) could not work from a fresh checkout.
+- Skip `chmod +x` on Windows so generation no longer throws
+  `ProcessException` mid-write and leaves a half-written package (#3). On
+  Unix a non-zero `chmod` exit is now surfaced instead of ignored.
+- Keep Android package relative paths with `/` separators on Windows so
+  planned and written layouts match other hosts.
+- On Windows the CLI notes that `tool/fetch_*.sh` need WSL or Git Bash.
 
 ## 0.1.0
 

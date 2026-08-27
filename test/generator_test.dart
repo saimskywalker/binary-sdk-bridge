@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:binary_sdk_bridge/binary_sdk_bridge.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 BridgeSpec _spec({
@@ -145,6 +146,26 @@ void main() {
           'android/src/withSdk/kotlin/com/example/acme_ads/sdk/VendorBridge.kt',
         ]),
       );
+    });
+
+    // #3: `path.joinAll` injects `\` on Windows, which would make the planned
+    // layout differ per host and break the `relativePath` contract on
+    // GeneratedFile. The Android package path is the only place the plan
+    // builds a nested path from user input.
+    test('the Android package path is POSIX regardless of host', () {
+      expect(_spec().androidPackagePath, 'com/example/acme_ads');
+    });
+
+    test('every relative path is POSIX, for both flavours', () {
+      for (final flavor in BridgeFlavor.values) {
+        for (final file in BridgeGenerator(_spec(flavor: flavor)).plan()) {
+          expect(
+            file.relativePath,
+            isNot(contains(r'\')),
+            reason: '${file.relativePath} (${flavor.name}) is not POSIX',
+          );
+        }
+      }
     });
 
     test('omits iOS files when no framework is given', () {
@@ -453,6 +474,37 @@ void main() {
         () => BridgeGenerator(_spec()).write(tmp.path, force: true),
         returnsNormally,
       );
+    });
+
+    // Regression for #3: chmod does not exist on Windows, and
+    // Process.runSync throws ProcessException there rather than returning a
+    // non-zero exit — which aborted the write loop part-way and left a
+    // half-written package on disk. Asserting the WHOLE plan landed is the
+    // real contract, and it is the assertion that fails on Windows without
+    // the fix.
+    test('writes every planned file, on every host', () {
+      final generator = BridgeGenerator(_spec());
+      final root = generator.write(tmp.path);
+
+      for (final file in generator.plan()) {
+        expect(
+          File(p.join(root.path, p.joinAll(file.relativePath.split('/'))))
+              .existsSync(),
+          isTrue,
+          reason: '${file.relativePath} was planned but not written',
+        );
+      }
+    });
+
+    test(
+        'writes the fetch scripts executable where the platform has the concept',
+        () {
+      final root = BridgeGenerator(_spec()).write(tmp.path);
+      final script = File(p.join(root.path, 'tool', 'fetch_ios_sdk.sh'));
+      expect(script.existsSync(), isTrue);
+      if (!Platform.isWindows) {
+        expect(script.statSync().mode & 0x40, isNot(0)); // owner +x
+      }
     });
   });
 }

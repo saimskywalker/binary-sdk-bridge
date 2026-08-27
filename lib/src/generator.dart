@@ -154,12 +154,33 @@ class BridgeGenerator {
       target.parent.createSync(recursive: true);
       target.writeAsStringSync(file.contents);
       if (file.executable) {
-        // Dart has no chmod; the shell one is universal on the platforms that
-        // can build these packages at all.
-        Process.runSync('chmod', ['+x', target.path]);
+        _markExecutable(target);
       }
     }
 
     return packageRoot;
+  }
+}
+
+/// Sets the owner-execute bit on [file].
+///
+/// Skipped on Windows: there is no `chmod`, and
+/// `Process.runSync` throws [ProcessException] when the executable is
+/// missing rather than returning a non-zero exit code — which used to abort
+/// the write loop mid-package (see #3). The execute bit has no meaning on
+/// NTFS anyway; [GeneratedFile.executable] still records intent for dry-run
+/// and tests.
+void _markExecutable(File file) {
+  if (Platform.isWindows) return;
+
+  final result = Process.runSync('chmod', ['+x', file.path]);
+  if (result.exitCode != 0) {
+    final stderr = (result.stderr as String).trim();
+    throw ProcessException(
+      'chmod',
+      ['+x', file.path],
+      stderr.isEmpty ? 'exit code ${result.exitCode}' : stderr,
+      result.exitCode,
+    );
   }
 }
