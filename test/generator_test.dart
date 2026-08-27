@@ -260,6 +260,122 @@ void main() {
     });
   });
 
+  group('the generated shell scripts are shell, not almost-shell', () {
+    String script(BridgeSpec spec, String needle) => BridgeGenerator(spec)
+        .plan()
+        .firstWhere((f) => f.relativePath.contains(needle))
+        .contents;
+
+    BridgeSpec named(String binary) => BridgeSpec(
+          pluginName: 'acme_ads',
+          organization: 'com.example',
+          iosFrameworkName: binary,
+          androidAarName: binary,
+        );
+
+    /// Every `NAME=` assignment and `${NAME...}` reference in a shell script
+    /// has to be a legal shell identifier, or bash never gets as far as the
+    /// logic.
+    void assertShellIdentifiersAreLegal(String source, String label) {
+      final legal = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+      for (final line in source.split('\n')) {
+        final assignment = RegExp(r'^([^\s=]+)=').firstMatch(line);
+        if (assignment != null) {
+          expect(legal.hasMatch(assignment.group(1)!), isTrue,
+              reason: '$label: "${assignment.group(1)}" is not a shell name');
+        }
+        for (final ref in RegExp(r'\$\{([^}:]+)').allMatches(line)) {
+          final name = ref.group(1)!;
+          if (name.contains('[')) continue; // ${BASH_SOURCE[0]}
+          expect(legal.hasMatch(name), isTrue,
+              reason: '$label: "\$$name" is not a shell name');
+        }
+      }
+    }
+
+    // The binary name is substituted into these scripts, and a bare
+    // `FRAMEWORK`/`AAR` token is a SUBSTRING of `FRAMEWORKS_DIR`,
+    // `XCFRAMEWORK` and `VENDOR_AAR_URL`. Substituting those too turned a
+    // perfectly ordinary vendor name into `Acme-SDKS_DIR=...`, which bash
+    // cannot assign — the script died on its first statement. `Acme-SDK` and
+    // `a.b` are names `BridgeSpec` deliberately accepts.
+    for (final binary in ['AcmeSDK', 'Acme-SDK', 'a.b', 'Acme_SDK']) {
+      test('a vendor name like "$binary" keeps the scripts assignable', () {
+        assertShellIdentifiersAreLegal(
+            script(named(binary), 'fetch_ios_sdk.sh'), 'ios/$binary');
+        assertShellIdentifiersAreLegal(
+            script(named(binary), 'fetch_android_sdk.sh'), 'android/$binary');
+      });
+    }
+
+    test('the env-file keys the script documents are the ones it reads', () {
+      // The heredoc tells the user to write VENDOR_AAR_URL; reading anything
+      // else means the documented file silently does nothing.
+      final android = script(named('Acme-SDK'), 'fetch_android_sdk.sh');
+      expect(android, contains(r'URL="${VENDOR_AAR_URL:-}"'));
+      expect(android, contains(r'EXPECTED_SHA="${VENDOR_AAR_SHA256:-}"'));
+      expect(android, contains('VENDOR_AAR_URL=https://.../Vendor.aar'));
+    });
+
+    test('no unescaped backtick reaches a generated script', () {
+      // A backtick inside a double-quoted `echo` is COMMAND SUBSTITUTION: the
+      // advice line about `flutter build` ran `flutter build` instead of
+      // printing it.
+      for (final flavor in BridgeFlavor.values) {
+        for (final file in BridgeGenerator(_spec(flavor: flavor)).plan()) {
+          if (!file.relativePath.endsWith('.sh')) continue;
+          final source = file.contents;
+          for (var i = 0; i < source.length; i++) {
+            if (source[i] != '`') continue;
+            expect(i > 0 && source[i - 1] == r'\', isTrue,
+                reason: '${file.relativePath} (${flavor.name}) has an '
+                    'unescaped backtick at offset $i');
+          }
+        }
+      }
+    });
+
+    test('the verify command it prints is one a user can paste', () {
+      // `\\\\` in the file survives the double-quoted echo as `\\`, which
+      // ends the line without continuing it.
+      final ios = script(_spec(), 'fetch_ios_sdk.sh');
+      expect(ios, contains(r'--package-path'));
+      expect(ios, isNot(contains(r'\\\\')));
+      expect(ios, contains(r'\\"'));
+    });
+
+    test('the native flavour never points at a Flutter app bundle', () {
+      // There is no Runner target in a plain iOS app.
+      final ios = BridgeGenerator(_spec(flavor: BridgeFlavor.native))
+          .plan()
+          .firstWhere((f) => f.relativePath.contains('fetch_ios_sdk.sh'))
+          .contents;
+      expect(ios, isNot(contains('Runner.app')));
+    });
+  });
+
+  group('the next steps the CLI prints', () {
+    test('the Flutter flavour gets the pub path dependency', () {
+      final steps = BridgeGenerator(_spec()).nextSteps('packages/acme_ads');
+      expect(steps.join('\n'), contains('acme_ads: {path: packages/acme_ads}'));
+    });
+
+    test('the native flavour is not told to add a pub dependency', () {
+      // It emits no pubspec.yaml, so `acme_ads: {path: ...}` is an
+      // instruction that cannot be followed — `flutter pub get` fails on it.
+      final steps = BridgeGenerator(_spec(flavor: BridgeFlavor.native))
+          .nextSteps('vendor/acme_ads');
+      final text = steps.join('\n');
+
+      expect(text, isNot(contains('{path:')));
+      expect(text, contains('vendor/acme_ads/ios/acme_ads'));
+      expect(text, contains('Swift package'));
+      expect(text, contains('vendor/acme_ads/android'));
+      expect(text, contains('Gradle module'));
+    });
+  });
+
   group('the native flavour carries no Flutter', () {
     List<GeneratedFile> nativeFiles() =>
         BridgeGenerator(_spec(flavor: BridgeFlavor.native)).plan();

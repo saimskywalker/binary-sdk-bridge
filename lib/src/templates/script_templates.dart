@@ -5,10 +5,17 @@ import '../spec.dart';
 /// It refuses an unpinned download rather than trusting on first use: the
 /// artifact links into a shipping app, and a vendor URL whose contents can
 /// change silently is not something to accept sight-unseen.
+///
+/// Placeholders are wrapped in `@...@` on purpose. A bare `FRAMEWORK` token
+/// is a SUBSTRING of the shell variables `FRAMEWORKS_DIR` and `XCFRAMEWORK`,
+/// so substituting it rewrote those identifiers too — and a vendor name with a
+/// dash or a dot (`Acme-SDK`, which [BridgeSpec] accepts, because vendors ship
+/// names like that) turned them into names bash cannot assign, killing the
+/// script on its first line.
 String fetchIosSh(BridgeSpec spec) => r'''
 #!/usr/bin/env bash
 #
-# Fetch the vendor xcframework into ios/PLUGIN/Frameworks/.
+# Fetch the vendor xcframework into ios/@PLUGIN@/Frameworks/.
 #
 # The binary is NOT committed. This script is the only supported way to put it
 # in place, so every machine and CI runner ends up with a byte-identical,
@@ -21,26 +28,26 @@ String fetchIosSh(BridgeSpec spec) => r'''
 set -euo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FRAMEWORKS_DIR="$PKG_DIR/ios/PLUGIN/Frameworks"
+FRAMEWORKS_DIR="$PKG_DIR/ios/@PLUGIN@/Frameworks"
 ENV_FILE="$PKG_DIR/tool/sdk_source.env"
-DEST="$FRAMEWORKS_DIR/FRAMEWORK.xcframework"
+DEST="$FRAMEWORKS_DIR/@FRAMEWORK@.xcframework"
 
 mkdir -p "$FRAMEWORKS_DIR"
 
 install_from_dir() {
   rm -rf "$DEST"
   cp -R "$1" "$DEST"
-  echo "==> installed $(basename "$1") as FRAMEWORK.xcframework"
+  echo "==> installed $(basename "$1") as @FRAMEWORK@.xcframework"
 }
 
 # SPM caches manifest evaluation by CONTENT, so a freshly-arrived binary is
 # invisible to the Package.swift probe until the cache is dropped.
 clear_spm_cache() {
-CACHE_COMMENT
+@CACHE_COMMENT@
   local mobile_dir="$PKG_DIR/../.."
   local cache
   for cache in \
-CACHE_PATHS
+@CACHE_PATHS@
   do
     if [[ -e "$cache" ]]; then
       rm -rf "$cache"
@@ -51,12 +58,12 @@ CACHE_PATHS
   echo "In Xcode, also run File > Packages > Reset Package Caches if it is open."
   echo
   echo "VERIFY the binary actually linked -- a green build is NOT evidence."
-VERIFY_NOTE
+@VERIFY_NOTE@
   echo
-  echo "  swift package --package-path PKG_PATH \\\\"
+  echo "  swift package --package-path @PKG_PATH@ \\"
   echo "    describe --type json | grep '\"type\" : \"binary\"'"
   echo
-  echo "  ls build/ios/iphonesimulator/Runner.app/Frameworks/"
+@BUNDLE_CHECK@
 }
 
 # --- local directory form --------------------------------------------------
@@ -125,17 +132,21 @@ install_from_dir "$XCFRAMEWORK"
 clear_spm_cache
 '''
     .replaceAll(
-        'CACHE_COMMENT', spec.isFlutter ? _flutterComment : _nativeComment)
+        '@CACHE_COMMENT@', spec.isFlutter ? _flutterComment : _nativeComment)
     .replaceAll(
-      'PKG_PATH',
+      '@PKG_PATH@',
       spec.isFlutter
           ? 'ios/Flutter/ephemeral/Packages/.packages/${spec.pluginName}'
           : 'ios/${spec.pluginName}',
     )
-    .replaceAll('CACHE_PATHS', spec.isFlutter ? _flutterCaches : _nativeCaches)
-    .replaceAll('VERIFY_NOTE', spec.isFlutter ? _flutterVerify : _nativeVerify)
-    .replaceAll('PLUGIN', spec.pluginName)
-    .replaceAll('FRAMEWORK', spec.iosFrameworkName ?? 'Vendor');
+    .replaceAll(
+        '@CACHE_PATHS@', spec.isFlutter ? _flutterCaches : _nativeCaches)
+    .replaceAll(
+        '@VERIFY_NOTE@', spec.isFlutter ? _flutterVerify : _nativeVerify)
+    .replaceAll('@BUNDLE_CHECK@',
+        spec.isFlutter ? _flutterBundleCheck : _nativeBundleCheck)
+    .replaceAll('@PLUGIN@', spec.pluginName)
+    .replaceAll('@FRAMEWORK@', spec.iosFrameworkName ?? 'Vendor');
 
 /// Flutter resolves through its own ephemeral graph AND Xcode's cloned
 /// SourcePackages, on top of SwiftPM's global manifest cache.
@@ -149,13 +160,24 @@ const _nativeCaches =
     r'''    "$HOME/Library/Caches/org.swift.swiftpm/manifests" \
     "$PKG_DIR/.build"''';
 
+/// The backticks are escaped because this is a DOUBLE-quoted `echo`: unescaped,
+/// bash reads them as command substitution and the script literally runs
+/// `flutter build` while printing this advice.
 const _flutterVerify =
-    r'''  echo "`flutter build` passes -quiet to xcodebuild, which suppresses the"
+    r'''  echo "\`flutter build\` passes -quiet to xcodebuild, which suppresses the"
   echo "#warning the bridge emits. Check one of these instead:"''';
 
 const _nativeVerify =
     r'''  echo "A build that succeeds without the binary looks identical to one"
   echo "that linked it. Check one of these instead:"''';
+
+/// `Runner.app` is Flutter's app bundle, so the native flavour cannot point at
+/// it — there is no Runner target in a plain iOS app.
+const _flutterBundleCheck =
+    r'''  echo "  ls build/ios/iphonesimulator/Runner.app/Frameworks/"''';
+
+const _nativeBundleCheck =
+    r'''  echo "  ls YourApp.app/Frameworks/   # inside the built app bundle"''';
 
 String fetchAndroidSh(BridgeSpec spec) => r'''
 #!/usr/bin/env bash
@@ -174,7 +196,7 @@ set -euo pipefail
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBS_DIR="$PKG_DIR/android/libs"
 ENV_FILE="$PKG_DIR/tool/sdk_source.env"
-DEST="$LIBS_DIR/AAR.aar"
+DEST="$LIBS_DIR/@AAR@.aar"
 
 mkdir -p "$LIBS_DIR"
 
@@ -185,7 +207,7 @@ if [[ $# -ge 1 ]]; then
     exit 1
   fi
   cp "$1" "$DEST"
-  echo "==> installed $(basename "$1") as AAR.aar"
+  echo "==> installed $(basename "$1") as @AAR@.aar"
   echo "    sha256: $(shasum -a 256 "$DEST" | cut -d' ' -f1)"
   echo
   echo "Record that hash — for a hand-delivered .aar it is the only evidence"
@@ -234,9 +256,9 @@ if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
 fi
 
 cp "$TMP_DIR/sdk.aar" "$DEST"
-echo "==> checksum ok, installed AAR.aar"
+echo "==> checksum ok, installed @AAR@.aar"
 '''
-    .replaceAll('AAR', spec.androidAarName ?? 'Vendor');
+    .replaceAll('@AAR@', spec.androidAarName ?? 'Vendor');
 
 String gitignore(BridgeSpec spec) {
   final lines = <String>[

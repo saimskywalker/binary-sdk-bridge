@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Fixes found by running the README end to end as a new user would.
+
+- The generated `tool/fetch_ios_sdk.sh` ran `flutter build` while trying to
+  explain it: the backticks in the advice line were command substitution
+  inside a double-quoted `echo`.
+- A vendor binary name containing a dash or a dot — `Acme-SDK`, which the
+  validator deliberately accepts — was substituted into the generated scripts'
+  own shell variable names, producing `Acme-SDKS_DIR=...` and
+  `${VENDOR_Acme-SDK_URL}`. The iOS script died on its first statement and the
+  Android one built a garbage URL. The env-file keys are now literally
+  `VENDOR_AAR_URL` / `VENDOR_AAR_SHA256`, as the script's own help text says.
+- The `swift package describe` command the script prints ended in `\\`, so
+  pasting it broke the line instead of continuing it.
+- `--flavor native` no longer tells you to add a pub path dependency to a
+  package that has no `pubspec.yaml`, and its fetch script no longer points at
+  Flutter's `Runner.app`.
+- The README's install step was missing entirely, and its example commands
+  (`dart run binary_sdk_bridge`) could not work from a fresh checkout.
+
 ## 0.1.0
 
 First release.

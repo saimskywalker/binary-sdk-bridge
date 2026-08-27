@@ -4,17 +4,36 @@ Wrap a **closed-source binary SDK** — Swift Package Manager on iOS, a Gradle
 module on Android — with the vendor binary kept out of version control and
 *optional at build time*.
 
+## Install
+
+Not on pub.dev yet, so install it from git:
+
+```bash
+dart pub global activate --source git \
+  https://github.com/saimskywalker/binary-sdk-bridge.git
+```
+
+That puts `binary-sdk-bridge` in `~/.pub-cache/bin`; add that directory to your
+`PATH`, or call it as `dart pub global run binary_sdk_bridge`. From a clone,
+`dart run bin/binary_sdk_bridge.dart` works with no install at all.
+
+Requires the Dart SDK (3.5 or newer). Generating needs nothing else — the
+vendor binary is fetched later, by the generated `tool/fetch_*.sh`, and is
+never required to build.
+
+## Usage
+
 Two flavours, same core:
 
 ```bash
 # Flutter plugin: native wrappers + Dart API + plugin classes
-dart run binary_sdk_bridge \
+binary-sdk-bridge \
   --name acme_ads --org com.example \
   --ios-framework AcmeSDK --android-aar AcmeSDK \
   --out packages
 
 # Native only: an SPM package and a Gradle module, no Flutter anywhere
-dart run binary_sdk_bridge --flavor native \
+binary-sdk-bridge --flavor native \
   --name acme_sdk --org com.example \
   --ios-framework AcmeSDK --android-aar AcmeSDK \
   --out vendor
@@ -116,7 +135,7 @@ acme_ads/
 └── tool/fetch_{ios,android}_sdk.sh
 ```
 
-Exactly one file has a `TODO`: the bridge. That is the only place the vendor's
+Exactly one file per platform has a `TODO`: the bridge. That is the only place the vendor's
 own API appears, which is the point — everything around it is already decided.
 
 ## Notes for the generated Android module
@@ -174,6 +193,7 @@ right.
 | `--ios-framework` | — | `.xcframework` base name; omit to skip iOS |
 | `--android-aar` | — | `.aar` base name; omit to skip Android |
 | `--out` | `.` | directory to create the package in |
+| `--description` | *generic* | `description:` for the generated pubspec (Flutter flavour only) |
 | `--ios-target` | `15.0` | iOS deployment target |
 | `--min-sdk` | `24` | Android `minSdk` |
 | `--compile-sdk` | `36` | Android `compileSdk` |

@@ -124,16 +124,13 @@ void main(List<String> arguments) {
   stdout
     ..writeln('Created ${root.path}')
     ..writeln()
-    ..writeln('Next:')
-    ..writeln('  1. Add it to your app: '
-        '${spec.pluginName}: {path: ${root.path}}')
-    ..writeln('  2. Drop the vendor binary in with tool/fetch_*.sh')
-    ..writeln('  3. Fill in the TODO in the bridge — that is the only place '
-        'the vendor API appears');
+    ..writeln('Next:');
+  generator.nextSteps(root.path).forEach(stdout.writeln);
 }
 
 String _usage(ArgParser parser) => '''
-binary-sdk-bridge — wrap a closed-source binary SDK as a Flutter plugin.
+binary-sdk-bridge — wrap a closed-source binary SDK as a Flutter plugin
+or as native-only SPM + Gradle modules.
 
 Usage:
   binary-sdk-bridge --name <plugin> --org <com.example> [options]
