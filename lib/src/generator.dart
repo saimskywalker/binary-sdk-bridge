@@ -105,6 +105,36 @@ class BridgeGenerator {
     return files;
   }
 
+  /// What to do with the package that was just written, as printed lines.
+  ///
+  /// Flavour-specific because the native flavour emits no `pubspec.yaml`: the
+  /// pub path-dependency line is not something a native consumer can act on,
+  /// and following it puts an unresolvable dependency in their app.
+  List<String> nextSteps(String packagePath) {
+    final lines = <String>[];
+    var number = 1;
+    void step(String text) => lines.add('  ${number++}. $text');
+    void detail(String text) => lines.add('     $text');
+
+    if (spec.isFlutter) {
+      step('Add it to your app: ${spec.pluginName}: {path: $packagePath}');
+    } else {
+      step('Add it to your app — this flavour has no pubspec:');
+      if (spec.hasIos) {
+        detail('iOS     — add $packagePath/ios/${spec.pluginName} as a local '
+            'Swift package');
+      }
+      if (spec.hasAndroid) {
+        detail('Android — include $packagePath/android as a Gradle module');
+      }
+    }
+    step('Drop the vendor binary in with tool/fetch_*.sh');
+    step('Fill in the TODO in the bridge — that is the only place the vendor '
+        'API appears');
+
+    return lines;
+  }
+
   /// Writes [plan] under `[outputDir]/<pluginName>`.
   ///
   /// Refuses to touch an existing directory unless [force] is set: silently
